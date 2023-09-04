@@ -1,10 +1,10 @@
-module github.com/orzogc/acfunlivedb
+module acfunlivedb
 
 go 1.20
 
 require (
-	github.com/orzogc/acfundanmu v0.0.0-20230424204943-dcaaf8d5a097
-	github.com/valyala/fasthttp v1.47.0
+	github.com/orzogc/acfundanmu v0.0.0-20230816111746-e3c4b648f2eb
+	github.com/valyala/fasthttp v1.48.0
 	github.com/valyala/fastjson v1.6.4
 	modernc.org/sqlite v1.22.1
 )
@@ -16,18 +16,18 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/klauspost/compress v1.16.5 // indirect
+	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/orzogc/fastws v1.0.5-0.20220122125748-aa014b776886 // indirect
+	github.com/orzogc/fastws v1.0.5-0.20230809182400-6c9094d8c52e // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/encoding v0.3.6 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
-	google.golang.org/protobuf v1.30.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 	lukechampine.com/uint128 v1.3.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect
 	modernc.org/ccgo/v3 v3.16.13 // indirect
