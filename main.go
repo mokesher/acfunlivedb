@@ -3,10 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,6 +24,10 @@ import (
 )
 
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+
+//const basePath = "E:\\Github\\acmon"
+
+const basePath = "/ac"
 
 type live struct {
 	liveID      string // 直播ID
@@ -53,6 +60,17 @@ var livePool = &sync.Pool{
 	New: func() interface{} {
 		return new(live)
 	},
+}
+
+func init() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	logFile, err := os.OpenFile(filepath.Join(basePath, "log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Println(err)
+	}
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+
+	log.SetOutput(multiWriter)
 }
 
 // 检查错误
@@ -216,9 +234,73 @@ func quitSignal(cancel context.CancelFunc) {
 	cancel()
 }
 
+// 准备table
+func prepare_table(ctx context.Context) {
+	// 检查table是否存在
+	row := db.QueryRowContext(ctx, checkTable)
+	var n int
+	err := row.Scan(&n)
+	checkErr(err)
+	if n == 0 {
+		// table不存在
+		_, err = db.ExecContext(ctx, createTable)
+		checkErr(err)
+	} else {
+		// table存在，检查liveCutNum是否存在
+		row = db.QueryRowContext(ctx, checkLiveCutNum)
+		err = row.Scan(&n)
+		checkErr(err)
+		if n == 0 {
+			// liveCutNum不存在，插入liveCutNum
+			_, err = db.ExecContext(ctx, insertLiveCutNum)
+			checkErr(err)
+		}
+	}
+	_, err = db.ExecContext(ctx, createLiveIDIndex)
+	checkErr(err)
+	_, err = db.ExecContext(ctx, createUIDIndex)
+	checkErr(err)
+}
+
+// stime以毫秒为单位，返回具体开播时间
+func startTime(stime int64) string {
+	t := time.Unix(stime/1e3, 0)
+	return fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
+}
+
+// dtime以毫秒为单位，返回具体直播时长
+func duration(dtime int64) string {
+	t := time.Unix(dtime/1e3, 0).UTC()
+	return fmt.Sprintf("%02d:%02d:%02d", t.Hour(), t.Minute(), t.Second())
+}
+
+// 处理查询
+func handleQuery(ctx context.Context, uid, count int) {
+	l := live{}
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+	rows, err := selectUIDStmt.QueryContext(ctx, uid, count)
+	checkErr(err)
+	defer rows.Close()
+	hasUID := false
+	for rows.Next() {
+		hasUID = true
+		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.liveCutNum)
+		checkErr(err)
+		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 直播剪辑编号：%d\n",
+			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.liveCutNum,
+		)
+	}
+	err = rows.Err()
+	checkErr(err)
+	if !hasUID {
+		log.Printf("没有uid为 %d 的主播的记录", uid)
+	}
+}
+
 // 处理输入 getplayback 646973
 func handleInput(ctx context.Context) {
-	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"getplayback liveID" fetch_j 或"quit"`
+	const helpMsg = `请输入" list_j "、"fetch" 、"getplayback liveID" fetch_j 或"quit"`
 	log.Println(helpMsg)
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -237,6 +319,8 @@ func handleInput(ctx context.Context) {
 			//continue
 		}
 		switch cmd[0] {
+		case "list_j":
+			handleQuery(ctx, 646973, -1)
 		case "getplayback":
 			log.Println("查询录播链接，请等待")
 			for _, liveID := range cmd[1:] {
@@ -244,11 +328,6 @@ func handleInput(ctx context.Context) {
 				if err != nil {
 					log.Println(err)
 				} else {
-					//if playback.Duration != 0 {
-					//	if queryExist(ctx, liveID) {
-					//		updateLiveDuration(ctx, liveID, playback.Duration)
-					//	}
-					//}
 					log.Printf("liveID为 %s 的录播查询结果是：\n录播链接：%s\n录播备份链接：%s",
 						liveID, playback.URL, playback.BackupURL,
 					)
@@ -261,24 +340,11 @@ func handleInput(ctx context.Context) {
 				log.Println(err)
 
 			} else {
-				if cmd[1] == "all" {
-					for _, v := range newList {
-						log.Printf("%+v", *v)
-					}
-				} else {
-					for _, v := range newList {
-						uid, err := strconv.Atoi(cmd[1])
-						if err != nil {
-							log.Println(err)
-							continue
-						}
-						if v.uid == uid {
-							saveLiveId(v)
-							break
-						}
-					}
+				for _, v := range newList {
+					log.Printf("%+v", *v)
 				}
 			}
+
 		case "fetch_j":
 			log.Println("查询js:")
 			newList, err := fetchLiveList()
@@ -287,17 +353,10 @@ func handleInput(ctx context.Context) {
 
 			} else {
 				uid := 646973
-				flag := false
 				for _, v := range newList {
 					if v.uid == uid {
-						flag = true
-						saveLiveId(v)
-						break
+						log.Printf("%+v", *v)
 					}
-
-				}
-				if !flag {
-					log.Println("Not find", uid)
 				}
 			}
 		default:
@@ -350,9 +409,122 @@ func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go quitSignal(cancel)
+
 	var err error
+	//path, err := os.Executable()
+	//checkErr(err)
+	//dir := filepath.Dir(path)
+	dbFile := filepath.Join(basePath, "acfunlive.db")
+
+	db, err = sql.Open("sqlite", dbFile)
+	checkErr(err)
+	defer db.Close()
+	err = db.Ping()
+	checkErr(err)
+	prepare_table(ctx)
+
+	insertStmt, err = db.PrepareContext(ctx, insertLive)
+	checkErr(err)
+	defer insertStmt.Close()
+	updateLiveCutStmt, err = db.PrepareContext(ctx, updateLiveCut)
+	checkErr(err)
+	defer updateLiveCutStmt.Close()
+	updateDurationStmt, err = db.PrepareContext(ctx, updateDuration)
+	checkErr(err)
+	defer updateDurationStmt.Close()
+	selectUIDStmt, err = db.PrepareContext(ctx, selectUID)
+	checkErr(err)
+	defer selectUIDStmt.Close()
+	selectLiveIDStmt, err = db.PrepareContext(ctx, selectLiveID)
+	checkErr(err)
+	defer selectLiveIDStmt.Close()
+
 	ac, err = acfundanmu.NewAcFunLive()
 	checkErr(err)
-	handleInput(ctx)
+	go handleInput(ctx)
+
+	oldList := make(map[string]*live)
+Loop:
+	for {
+		select {
+		case <-childCtx.Done():
+			break Loop
+		default:
+			var newList map[string]*live
+			err = runThrice(func() error {
+				newList, err = fetchLiveList()
+				return err
+			})
+			if err != nil {
+				log.Println("获取列表数据出现过多错误")
+				return
+			}
+
+			//if len(newList) == 0 {
+			//	log.Println("no people")
+			//}
+
+			for _, l := range newList {
+				if _, ok := oldList[l.liveID]; !ok {
+					if l.uid != 646973 {
+						continue
+					}
+
+					log.Println(l)
+					// 新的liveID
+					insert(ctx, l)
+					go func(uid int, liveID string) {
+						var num int
+						var err error
+						err = runThrice(func() error {
+							num, err = fetchLiveCut(uid, liveID)
+							return err
+						})
+						if err != nil {
+							log.Printf("获取uid为 %d 的主播的liveID为 %s 的直播剪辑编号失败，放弃获取", uid, liveID)
+							return
+						}
+						updateLiveCutNum(ctx, liveID, num)
+					}(l.uid, l.liveID)
+				}
+			}
+
+			for _, l := range oldList {
+				if _, ok := newList[l.liveID]; !ok {
+					if l.uid != 646973 {
+						continue
+					}
+					// liveID对应的直播结束
+					go func(l *live) {
+						defer livePool.Put(l)
+						time.Sleep(10 * time.Second)
+						var summary *acfundanmu.Summary
+						var err error
+						err = runThrice(func() error {
+							summary, err = ac.GetSummary(l.liveID)
+							return err
+						})
+						if err != nil {
+							log.Printf("获取 %s（%d） 的liveID为 %s 的直播总结出现错误，放弃获取", l.name, l.uid, l.liveID)
+							return
+						}
+						if summary.Duration == 0 {
+							log.Printf("直播时长为0，无法获取 %s（%d） 的liveID为 %s 的直播时长", l.name, l.uid, l.liveID)
+							return
+						}
+						insert(ctx, l)
+						updateLiveDuration(ctx, l.liveID, summary.Duration)
+					}(l)
+				} else {
+					livePool.Put(l)
+				}
+			}
+
+			oldList = newList
+			time.Sleep(20 * time.Second)
+		}
+	}
 }
