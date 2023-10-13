@@ -15,9 +15,11 @@ FROM alpine
 
 RUN mkdir /ac/
 
-COPY --from=go_build /ac/acfunlivedb /acfunlivedb
+COPY --from=go_build /ac/acmon /acmon
 
-ENTRYPOINT ["/acfunlivedb"]
+ENTRYPOINT ["/acmon"]
 
 
 # docker build -t ac:v1 .
+# docker run -itd --name ac --restart=always --network=host -v /ac:/ac -v /etc/localtime:/etc/localtime  ac:v1
+

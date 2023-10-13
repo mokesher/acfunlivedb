@@ -340,8 +340,10 @@ func handleInput(ctx context.Context) {
 				log.Println(err)
 
 			} else {
-				for _, v := range newList {
-					log.Printf("%+v", *v)
+				for _, l := range newList {
+					fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 直播剪辑编号：%d\n",
+						startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.liveCutNum,
+					)
 				}
 			}
 
@@ -353,9 +355,12 @@ func handleInput(ctx context.Context) {
 
 			} else {
 				uid := 646973
-				for _, v := range newList {
-					if v.uid == uid {
-						log.Printf("%+v", *v)
+				for _, l := range newList {
+					if l.uid == uid {
+						//log.Printf("%+v", *l)
+						fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 直播剪辑编号：%d\n",
+							startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.liveCutNum,
+						)
 					}
 				}
 			}

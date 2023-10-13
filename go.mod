@@ -1,4 +1,4 @@
-module github.com/orzogc/acfunlivedb
+module acmon
 
 go 1.20
 
